@@ -25,35 +25,36 @@ public class TinySETokenizer implements Tokenizer {
 	}
 
 	public List<String> split(String text) {
-		TokenStream tokenStream = analyzer.tokenStream("contents",text);
-		CharTermAttribute charTermAttribute = tokenStream.addAttribute(CharTermAttribute.class);
-		List<String> result = new ArrayList<String>();
 		try{
+			TokenStream tokenStream = analyzer.tokenStream("contents",text);
+			CharTermAttribute charTermAttribute = tokenStream.addAttribute(CharTermAttribute.class);
+			List<String> result = new ArrayList<String>();
 			tokenStream.reset();
 			while(tokenStream.incrementToken()){
 			    String term = charTermAttribute.toString();
 			    result.add(term);
 			}
-		}
-		catch(Exception e){
-			System.out.println(e);
-		}
-		for(int i=0; i<result.size(); i++){
-			stemmer.setCurrent(result.get(i));
-			stemmer.stem();
-			result.set(i,stemmer.getCurrent());
-		}
-		try{
+			for(int i=0; i<result.size(); i++){
+				stemmer.setCurrent(result.get(i));
+				stemmer.stem();
+				result.set(i,stemmer.getCurrent());
+			}
 			tokenStream.close();
+			return result;
 		}
 		catch(Exception e){
 			System.out.println(e);
+			return null;
 		}
-		return result;
 	}
 
 	public void clean() {
-		analyzer.close();
+		try{
+			analyzer.close();
+		}
+		catch(Exception e){
+			System.out.println(e);
+		}
 	}
 //	public static void main(String[] args){
 //		ArrayList<String[]> results = new ArrayList<String[]>();

@@ -49,14 +49,15 @@ public class TinySEExternalSort implements ExternalSort {
 		if(!dir.exists()){
 			dir.mkdirs();
 		}
-		DataInputStream input = new DataInputStream(new FileInputStream(infile));
-		DataOutputStream output = new DataOutputStream(new FileOutputStream(outfile));
+//		int bufsize = records * ((Integer.SIZE/Byte.SIZE) * 3);
+		DataInputStream input = new DataInputStream(new BufferedInputStream(new FileInputStream(infile),blocksize));
+		DataOutputStream output = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(outfile),blocksize));
 		DataOutputStream run_writer;
 		DataInputStream run_read1;
 		DataInputStream run_read2;
 		ArrayList<Triple<Integer, Integer, Integer>> runs = new ArrayList<Triple<Integer, Integer, Integer>>();
-		int word_id, doc_id, pos;
 		int records = blocksize / ((Integer.SIZE/Byte.SIZE) * 3); // 한 블럭당 튜플 개수
+		int word_id, doc_id, pos;
 		int run = records * 3 * (Integer.SIZE/Byte.SIZE) * nblocks; // 한 run의 용량
 		int run_cnt = 1;
 		int path_cnt = 1;
@@ -68,12 +69,13 @@ public class TinySEExternalSort implements ExternalSort {
 				runs.add(Triple.of(word_id,doc_id,pos));
 			}
 			Collections.sort(runs, new TripleSort());
-			run_writer = new DataOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"));
+			run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"),blocksize));
 			for(Triple<Integer,Integer,Integer> tuple : runs){
 				run_writer.writeInt(tuple.getLeft());
 				run_writer.writeInt(tuple.getMiddle());
 				run_writer.writeInt(tuple.getRight());
 			}
+			run_writer.close();
 			System.out.println((run_cnt++)+" runs");
 			runs.clear();
 		}
@@ -85,12 +87,13 @@ public class TinySEExternalSort implements ExternalSort {
 			runs.add(Triple.of(word_id,doc_id,pos));
 		}
 		Collections.sort(runs, new TripleSort());
-		run_writer = new DataOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"));
+		run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"),blocksize));
 		for(Triple<Integer,Integer,Integer> tuple : runs){
 			run_writer.writeInt(tuple.getLeft());
 			run_writer.writeInt(tuple.getMiddle());
 			run_writer.writeInt(tuple.getRight());
 		}
+		run_writer.close();
 		System.out.println((run_cnt)+" runs");
 		System.out.println("create runs");
 		input.close();
@@ -104,9 +107,9 @@ public class TinySEExternalSort implements ExternalSort {
 			path_cnt++;
 			run_cnt = 1;
 			for(int i=1; i<=pre_runs/2; i++){
-				run_read1 = new DataInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+(run_cnt*2-1)+".data"));
-				run_read2 = new DataInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+(run_cnt*2)+".data"));
-				run_writer = new DataOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"));
+				run_read1 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+(run_cnt*2-1)+".data"),blocksize));
+				run_read2 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+(run_cnt*2)+".data"),blocksize));
+				run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"),blocksize));
 				word_id = run_read1.readInt();
 				doc_id = run_read1.readInt();
 				pos = run_read1.readInt();
@@ -158,13 +161,15 @@ public class TinySEExternalSort implements ExternalSort {
 					}
 				}
 				System.out.println((run_cnt++)+" runs");
+				run_writer.close();
 			}
 			if(pre_runs%2 == 1){ // run이 홀수인경우 다음 마지막 run을 path로 그대로 넘김
-				run_read1 = new DataInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+pre_runs+".data"));
-				run_writer = new DataOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+(pre_runs/2+1)+".data"));
+				run_read1 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+pre_runs+".data"),blocksize));
+				run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+(pre_runs/2+1)+".data"),blocksize));
 				while(run_read1.available() > 0){
 					run_writer.writeInt(run_read1.readInt());
 				}
+				run_writer.close();
 				System.out.println((run_cnt++)+" runs(copied)");
 			}
 			if(run_cnt == 3){
@@ -177,8 +182,8 @@ public class TinySEExternalSort implements ExternalSort {
 		}
 //		merge path 완료
 //		마지막 merge
-		run_read1 = new DataInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt)+"_1.data"));
-		run_read2 = new DataInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt)+"_2.data"));
+		run_read1 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt)+"_1.data"),blocksize));
+		run_read2 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt)+"_2.data"),blocksize));
 		word_id = run_read1.readInt();
 		doc_id = run_read1.readInt();
 		pos = run_read1.readInt();
@@ -229,6 +234,7 @@ public class TinySEExternalSort implements ExternalSort {
 				}
 			}
 		}
+		output.close();
 		System.out.println("Finished");
 	}
 //	public static void main(String[] args){

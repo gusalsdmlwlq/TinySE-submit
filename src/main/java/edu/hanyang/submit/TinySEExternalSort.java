@@ -1,6 +1,7 @@
 package edu.hanyang.submit;
 
 import java.io.IOException;
+import java.security.cert.CollectionCertStoreParameters;
 
 import edu.hanyang.indexer.ExternalSort;
 import java.io.FileInputStream;
@@ -13,9 +14,20 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import org.apache.commons.lang3.tuple.Triple;
+import org.apache.commons.lang3.tuple.*;
 import java.io.File;
 
 public class TinySEExternalSort implements ExternalSort {
+	
+	class Tuple{
+		int index,word_id,doc_id,pos;
+		public Tuple(int index, int word_id, int doc_id, int pos){
+			this.index = index;
+			this.word_id = word_id;
+			this.doc_id = doc_id;
+			this.pos = pos;
+		}
+	}
 	
 	class TripleSort implements Comparator<Triple<Integer,Integer,Integer>> {
 		@Override 
@@ -32,16 +44,19 @@ public class TinySEExternalSort implements ExternalSort {
 			} 
 		} 
 	}
-	public int compTriple(Triple<Integer,Integer,Integer> a, Triple<Integer,Integer,Integer> b) { 
-		if(a.getLeft() > b.getLeft()) return 1;
-		else if(a.getLeft() < b.getLeft()) return -1;
-		else{
-			if(a.getMiddle() > b.getMiddle()) return 1;
-			else if(a.getMiddle() < b.getMiddle()) return -1;
+	class TupleSort implements Comparator<Tuple> {
+		@Override 
+		public int compare(Tuple a, Tuple b) { 
+			if(a.word_id > b.word_id) return 1;
+			else if(a.word_id < b.word_id) return -1;
 			else{
-				if(a.getRight() > b.getRight()) return 1;
-				else return -1;
-			}
+				if(a.doc_id > b.doc_id) return 1;
+				else if(a.doc_id < b.doc_id) return -1;
+				else{
+					if(a.pos > b.pos) return 1;
+					else return -1;
+				}
+			} 
 		} 
 	}
 	public void sort(String infile, String outfile, String tmpdir, int blocksize, int nblocks) throws IOException {
@@ -99,80 +114,63 @@ public class TinySEExternalSort implements ExternalSort {
 		input.close();
 		// create run 완료
 		// merge path 시작
-		int word_id2, doc_id2, pos2;
-		Triple<Integer,Integer,Integer> triple1;
-		Triple<Integer,Integer,Integer> triple2;
+//		int word_id2, doc_id2, pos2;
+		ArrayList<Tuple> tuples = new ArrayList<Tuple>();
+		ArrayList<DataInputStream> run_reads = new ArrayList<DataInputStream>();
+		Triple<Integer,Integer,Integer> triple;
+		Tuple tuple;
+		int index;
 		while(true){
 			int pre_runs = run_cnt;
+			int cur_runs = pre_runs/nblocks;
+			if(cur_runs*nblocks < pre_runs) cur_runs++;
 			path_cnt++;
 			run_cnt = 1;
-			for(int i=1; i<=pre_runs/2; i++){
-				run_read1 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+(run_cnt*2-1)+".data"),blocksize));
-				run_read2 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+(run_cnt*2)+".data"),blocksize));
-				run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"),blocksize));
-				word_id = run_read1.readInt();
-				doc_id = run_read1.readInt();
-				pos = run_read1.readInt();
-				triple1 = Triple.of(word_id,doc_id,pos);
-				word_id2 = run_read2.readInt();
-				doc_id2 = run_read2.readInt();
-				pos2 = run_read2.readInt();
-				triple2 = Triple.of(word_id2,doc_id2,pos2);
+			int run_num = 1;
+			int iter;
+			for(int i=1; i<=cur_runs; i++){
+				run_reads.clear();
+				tuples.clear();
+				if(pre_runs > nblocks){
+					iter = nblocks;
+					pre_runs -= nblocks;
+				}
+				else iter = pre_runs;
+				for(int j=0; j<iter; j++){
+					DataInputStream run_read = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+run_num+".data"),blocksize));
+					run_reads.add(run_read);
+					run_num++;
+				}
+				if(cur_runs == 1) run_writer = output;
+				else run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+run_cnt+".data"),blocksize));
+				for(int j=0; j<iter; j++){
+					word_id = run_reads.get(j).readInt();
+					doc_id = run_reads.get(j).readInt();
+					pos = run_reads.get(j).readInt();
+					tuple = new Tuple(j,word_id,doc_id,pos);
+					tuples.add(tuple);
+				}
 				while(true){
-					if(compTriple(triple1,triple2) == 1){
-						run_writer.writeInt(triple2.getLeft());
-						run_writer.writeInt(triple2.getMiddle());
-						run_writer.writeInt(triple2.getRight());
-						if(run_read2.available() <= 0){
-							run_writer.writeInt(triple1.getLeft());
-							run_writer.writeInt(triple1.getMiddle());
-							run_writer.writeInt(triple1.getRight());
-							while(run_read1.available() > 0){
-								run_writer.writeInt(run_read1.readInt());
-							}
-							break;
-						}
-						else{
-							word_id2 = run_read2.readInt();
-							doc_id2 = run_read2.readInt();
-							pos2 = run_read2.readInt();
-							triple2 = Triple.of(word_id2,doc_id2,pos2);
-						}
+					Collections.sort(tuples, new TupleSort());
+					tuple = tuples.get(0);
+					index = tuple.index;
+					run_writer.writeInt(tuple.word_id);
+					run_writer.writeInt(tuple.doc_id);
+					run_writer.writeInt(tuple.pos);
+					tuples.remove(0);
+					if(run_reads.get(index).available() > 0){
+						word_id = run_reads.get(index).readInt();
+						doc_id = run_reads.get(index).readInt();
+						pos = run_reads.get(index).readInt();
+						tuple = new Tuple(index,word_id,doc_id,pos);
+						tuples.add(tuple);
 					}
-					else if(compTriple(triple1,triple2) == -1){
-						run_writer.writeInt(triple1.getLeft());
-						run_writer.writeInt(triple1.getMiddle());
-						run_writer.writeInt(triple1.getRight());
-						if(run_read1.available() <= 0){
-							run_writer.writeInt(triple2.getLeft());
-							run_writer.writeInt(triple2.getMiddle());
-							run_writer.writeInt(triple2.getRight());
-							while(run_read2.available() > 0){
-								run_writer.writeInt(run_read2.readInt());
-							}
-							break;
-						}
-						else{
-							word_id = run_read1.readInt();
-							doc_id = run_read1.readInt();
-							pos = run_read1.readInt();
-							triple1 = Triple.of(word_id,doc_id,pos);
-						}
-					}
+					if(tuples.isEmpty()) break;
 				}
 				System.out.println((run_cnt++)+" runs");
 				run_writer.close();
 			}
-			if(pre_runs%2 == 1){ // run이 홀수인경우 다음 마지막 run을 path로 그대로 넘김
-				run_read1 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt-1)+"_"+pre_runs+".data"),blocksize));
-				run_writer = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmpdir+"/run_"+path_cnt+"_"+(pre_runs/2+1)+".data"),blocksize));
-				while(run_read1.available() > 0){
-					run_writer.writeInt(run_read1.readInt());
-				}
-				run_writer.close();
-				System.out.println((run_cnt++)+" runs(copied)");
-			}
-			if(run_cnt == 3){
+			if(run_cnt == 2){
 				break;
 			}
 			else{
@@ -181,59 +179,6 @@ public class TinySEExternalSort implements ExternalSort {
 			}
 		}
 //		merge path 완료
-//		마지막 merge
-		run_read1 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt)+"_1.data"),blocksize));
-		run_read2 = new DataInputStream(new BufferedInputStream(new FileInputStream(tmpdir+"/run_"+(path_cnt)+"_2.data"),blocksize));
-		word_id = run_read1.readInt();
-		doc_id = run_read1.readInt();
-		pos = run_read1.readInt();
-		triple1 = Triple.of(word_id,doc_id,pos);
-		word_id2 = run_read2.readInt();
-		doc_id2 = run_read2.readInt();
-		pos2 = run_read2.readInt();
-		triple2 = Triple.of(word_id2,doc_id2,pos2);
-		while(true){
-			if(compTriple(triple1,triple2) == 1){
-				output.writeInt(triple2.getLeft());
-				output.writeInt(triple2.getMiddle());
-				output.writeInt(triple2.getRight());
-				if(run_read2.available() <= 0){
-					output.writeInt(triple1.getLeft());
-					output.writeInt(triple1.getMiddle());
-					output.writeInt(triple1.getRight());
-					while(run_read1.available() > 0){
-						output.writeInt(run_read1.readInt());
-					}
-					break;
-				}
-				else{
-					word_id2 = run_read2.readInt();
-					doc_id2 = run_read2.readInt();
-					pos2 = run_read2.readInt();
-					triple2 = Triple.of(word_id2,doc_id2,pos2);
-				}
-			}
-			else if(compTriple(triple1,triple2) == -1){
-				output.writeInt(triple1.getLeft());
-				output.writeInt(triple1.getMiddle());
-				output.writeInt(triple1.getRight());
-				if(run_read1.available() <= 0){
-					output.writeInt(triple2.getLeft());
-					output.writeInt(triple2.getMiddle());
-					output.writeInt(triple2.getRight());
-					while(run_read2.available() > 0){
-						output.writeInt(run_read2.readInt());
-					}
-					break;
-				}
-				else{
-					word_id = run_read1.readInt();
-					doc_id = run_read1.readInt();
-					pos = run_read1.readInt();
-					triple1 = Triple.of(word_id,doc_id,pos);
-				}
-			}
-		}
 		output.close();
 		System.out.println("Finished");
 	}

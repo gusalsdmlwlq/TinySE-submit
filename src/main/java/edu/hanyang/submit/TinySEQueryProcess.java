@@ -90,12 +90,40 @@ public class TinySEQueryProcess implements QueryProcess {
 //		System.out.println(query);
 		String[] strs = query.split(" ");
 		for(int i=0; i<strs.length; i++){
+			if(strs[i].length() == 1 && strs[i].charAt(0) == '"'){ // 예외처리
+				if(inphase == false){
+					inphase = true;
+					shift = 0;
+				}
+				else{
+					inphase = false;
+					oprand = tree.new QueryPlanNode();
+					oprand.type = NODE_TYPE.OP_REMOVE_POS;
+					oprand.left = op_list.get(op_list.size()-1);
+					op_list.remove(op_list.size()-1);
+//					System.out.println("new op remove pos");
+					if(op_list.isEmpty()){
+						op_list.add(oprand);
+					}
+					else{
+						op = tree.new QueryPlanNode();
+						op.type = NODE_TYPE.OP_AND;
+						op.left = op_list.get(op_list.size()-1);
+						op_list.remove(op_list.size()-1);
+						op.right = oprand;
+						op_list.add(op);
+//						System.out.println("new op and");
+					}
+//					System.out.println("phase out "+strs[i]);
+				}
+				continue;
+			}
+			
 			if(strs[i].charAt(0) == '"'){
 				inphase = true;
 				shift = 0;
 //				System.out.println("phase in "+strs[i]);
 			}
-			
 			oprand = tree.new QueryPlanNode();
 			oprand.type = NODE_TYPE.OPRAND;
 			oprand.termid = Integer.parseInt((strs[i].replace('"', ' ')).trim());
